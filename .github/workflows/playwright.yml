@@ -1,0 +1,63 @@
+name: Playwright Tests with VNC
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    services:
+      # VNC server service
+      novnc:
+        image: theasp/novnc:latest
+        env:
+          DISPLAY_WIDTH: 1280
+          DISPLAY_HEIGHT: 720
+          RUN_XTERM: 'no'
+        ports:
+          - 8080:8080
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install xvfb and x11vnc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb x11vnc
+
+    - name: Start Xvfb and x11vnc
+      run: |
+        Xvfb :99 -screen 0 1280x720x24 &
+        export DISPLAY=:99
+        x11vnc -forever -nopw -display :99 &
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+
+    - name: Run Playwright tests
+      run: xvfb-run --server-args="-screen 0 1280x720x24" npx playwright test
+      env:
+        DISPLAY: :99
+        PLAYWRIGHT_HEADLESS: false
+
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 30
+
+    - name: Display VNC connection information
+      run: |
+        echo "VNC viewer is available at http://localhost:8080/vnc.html"
+        echo "You can connect using a VNC viewer or browser while the workflow is running"
