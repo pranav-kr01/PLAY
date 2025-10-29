@@ -8,47 +8,45 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
-
-    services:
-      # VNC server service
-      novnc:
-        image: theasp/novnc:latest
-        env:
-          DISPLAY_WIDTH: 1280
-          DISPLAY_HEIGHT: 720
-          RUN_XTERM: 'no'
-        ports:
-          - 8080:8080
+    container:
+      image: mcr.microsoft.com/playwright:v1.39.0-focal
+      options: --ipc=host --user root
 
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install xvfb and x11vnc
+    - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y xvfb x11vnc
+        apt-get update
+        apt-get install -y xvfb x11vnc novnc python3-websockify
+        mkdir -p ~/.vnc
+        x11vnc -storepasswd playwright ~/.vnc/passwd
 
-    - name: Start Xvfb and x11vnc
+    - name: Start display and VNC
       run: |
         Xvfb :99 -screen 0 1280x720x24 &
+        sleep 2
         export DISPLAY=:99
-        x11vnc -forever -nopw -display :99 &
+        x11vnc -forever -passwd playwright -display :99 &
+        sleep 2
+        websockify -D --web=/usr/share/novnc/ 8080 localhost:5900
+        echo "VNC server started on port 8080"
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-
-    - name: Install dependencies
+    - name: Install Node dependencies
       run: npm ci
 
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
 
     - name: Run Playwright tests
-      run: xvfb-run --server-args="-screen 0 1280x720x24" npx playwright test
+      run: DISPLAY=:99 npx playwright test --headed
       env:
-        DISPLAY: :99
         PLAYWRIGHT_HEADLESS: false
+
+    - name: Display VNC connection information
+      run: |
+        echo "VNC server is running at http://localhost:8080/vnc.html"
+        echo "Password is: playwright"
 
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
